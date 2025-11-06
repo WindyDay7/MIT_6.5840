@@ -7,29 +7,30 @@ import (
 	"6.5840/labrpc"
 )
 
+// a per-clerk ClientEnd to a server
 type end struct {
 	name string
 	end  *labrpc.ClientEnd
 }
 
-// Servers are named by ServerName() and clerks lazily make a
-// per-clerk ClientEnd to a server.  Each clerk has a Clnt with a map
-// of the allocated ends for this clerk.
+// Servers are named by ServerName() and clerks lazily make a per-clerk ClientEnd to a server.
+// Each clerk has a Clnt with a map of the allocated ends for this clerk.
 type Clnt struct {
 	mu   sync.Mutex
 	net  *labrpc.Network
-	ends map[string]end
+	ends map[string]end // map from server name to per-clerk ClientEnd
 
 	// if nil client can connect to all servers
 	// if len(srvs) = 0, client cannot connect to any servers
 	srvs []string
 }
 
+// build a new Clnt that can connect only to servers in srvs[]
 func makeClntTo(net *labrpc.Network, srvs []string) *Clnt {
 	return &Clnt{ends: make(map[string]end), net: net, srvs: srvs}
 }
 
-// caller must acquire lock
+// check if the clnt is allowed to connect to server
 func (clnt *Clnt) allowedL(server string) bool {
 	if clnt.srvs == nil {
 		return true
@@ -42,6 +43,7 @@ func (clnt *Clnt) allowedL(server string) bool {
 	return false
 }
 
+// Clnt build a connection to server if none exists
 func (clnt *Clnt) makeEnd(server string) end {
 	clnt.mu.Lock()
 	defer clnt.mu.Unlock()
@@ -52,6 +54,7 @@ func (clnt *Clnt) makeEnd(server string) end {
 
 	name := Randstring(20)
 	//log.Printf("%p: makEnd %v %v allowed %t", clnt, name, server, clnt.allowedL(server))
+	// build a new end and connect it to server
 	end := end{name: name, end: clnt.net.MakeEnd(name)}
 	clnt.net.Connect(name, server)
 	if clnt.allowedL(server) {
@@ -59,11 +62,13 @@ func (clnt *Clnt) makeEnd(server string) end {
 	} else {
 		clnt.net.Enable(name, false)
 	}
+	// write the end into the map
 	clnt.ends[server] = end
 	return end
 }
 
 func (clnt *Clnt) Call(server, method string, args interface{}, reply interface{}) bool {
+	// we call makeEnd to get (or create) the per-clerk ClientEnd, because the fucntion makeEnd is a Lazy Initialization
 	end := clnt.makeEnd(server)
 	ok := end.end.Call(method, args, reply)
 	// log.Printf("%p: Call done e %v m %v %v %v ok %v", clnt, end.name, method, args, reply, ok)
@@ -81,6 +86,7 @@ func (clnt *Clnt) ConnectAll() {
 	clnt.srvs = nil
 }
 
+// Connect to only the servers in srvs[]
 func (clnt *Clnt) ConnectTo(srvs []string) {
 	clnt.mu.Lock()
 	defer clnt.mu.Unlock()

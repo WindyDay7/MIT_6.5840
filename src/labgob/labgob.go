@@ -7,13 +7,15 @@ package labgob
 // about non-capitalized field names.
 //
 
-import "encoding/gob"
-import "io"
-import "reflect"
-import "fmt"
-import "sync"
-import "unicode"
-import "unicode/utf8"
+import (
+	"encoding/gob"
+	"fmt"
+	"io"
+	"reflect"
+	"sync"
+	"unicode"
+	"unicode/utf8"
+)
 
 var mu sync.Mutex
 var errorCount int // for TestCapital
@@ -70,6 +72,7 @@ func checkValue(value interface{}) {
 }
 
 func checkType(t reflect.Type) {
+	// get the kind
 	k := t.Kind()
 
 	mu.Lock()
@@ -90,7 +93,7 @@ func checkType(t reflect.Type) {
 			f := t.Field(i)
 			rune, _ := utf8.DecodeRuneInString(f.Name)
 			if unicode.IsUpper(rune) == false {
-				// ta da
+				// the First letter in encoding must be upper-case
 				fmt.Printf("labgob error: lower-case field %v of %v in RPC or persist/snapshot will break your Raft\n",
 					f.Name, t.Name())
 				mu.Lock()
@@ -112,13 +115,11 @@ func checkType(t reflect.Type) {
 	}
 }
 
-//
 // warn if the value contains non-default values,
 // as it would if one sent an RPC but the reply
 // struct was already modified. if the RPC reply
 // contains default values, GOB won't overwrite
 // the non-default value.
-//
 func checkDefault(value interface{}) {
 	if value == nil {
 		return
@@ -156,6 +157,7 @@ func checkDefault1(value reflect.Value, depth int, name string) {
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Uintptr, reflect.Float32, reflect.Float64,
 		reflect.String:
+		// primitive types
 		if reflect.DeepEqual(reflect.Zero(t).Interface(), value.Interface()) == false {
 			mu.Lock()
 			if errorCount < 1 {

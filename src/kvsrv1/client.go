@@ -6,8 +6,9 @@ import (
 	"6.5840/tester1"
 )
 
-
+// 
 type Clerk struct {
+	// 
 	clnt   *tester.Clnt
 	server string
 }

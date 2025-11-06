@@ -49,15 +49,18 @@ package labrpc
 //   pass svc to srv.AddService()
 //
 
-import "6.5840/labgob"
-import "bytes"
-import "reflect"
-import "sync"
-import "log"
-import "strings"
-import "math/rand"
-import "time"
-import "sync/atomic"
+import (
+	"bytes"
+	"log"
+	"math/rand"
+	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"6.5840/labgob"
+)
 
 const (
 	SHORTDELAY = 27   // ms
@@ -65,6 +68,7 @@ const (
 	MAXDELAY   = LONGDELAY + 100
 )
 
+// request message
 type reqMsg struct {
 	endname  interface{} // name of sending ClientEnd
 	svcMeth  string      // e.g. "Raft.AppendEntries"
@@ -78,13 +82,16 @@ type replyMsg struct {
 	reply []byte
 }
 
+// ClientEnd is an abstraction of a single client end-point.
+// multiple ClientEnds may talk to the same server.
+// each ClientEnd has a unique name (usually a string or int).
 type ClientEnd struct {
 	endname interface{}   // this end-point's name
 	ch      chan reqMsg   // copy of Network.endCh
 	done    chan struct{} // closed when Network is cleaned up
 }
 
-// send an RPC, wait for the reply.
+// ClientEnd sends an RPC, wait for the reply.
 // the return value indicates success; false means that
 // no reply was received from the server.
 func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bool {
@@ -132,9 +139,9 @@ type Network struct {
 	mu             sync.Mutex
 	reliable       bool
 	longDelays     bool                        // pause a long time on send on disabled connection
-	longReordering bool                        // sometimes delay replies a long time
+	longReordering bool                        // sometimes delay replies a long time, 是否启用长时间的消息重排序
 	ends           map[interface{}]*ClientEnd  // ends, by name
-	enabled        map[interface{}]bool        // by end name
+	enabled        map[interface{}]bool        // by end name, if this end is enabled
 	servers        map[interface{}]*Server     // servers, by name
 	connections    map[interface{}]interface{} // endname -> servername
 	endCh          chan reqMsg
@@ -228,33 +235,33 @@ func (rn *Network) readEndnameInfo(endname interface{}) (enabled bool,
 func (rn *Network) isServerDead(endname interface{}, servername interface{}, server *Server) bool {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
-
+	// check if the server is still connected and enabled
 	if rn.enabled[endname] == false || rn.servers[servername] != server {
 		return true
 	}
 	return false
 }
 
+// process a single request message.
 func (rn *Network) processReq(req reqMsg) {
+	// read the network configuration Information for this request.
 	enabled, servername, server, reliable, longreordering := rn.readEndnameInfo(req.endname)
 
 	if enabled && servername != nil && server != nil {
 		if reliable == false {
-			// short delay
+			// short delay for unreliable networks, delay for random time
 			ms := (rand.Int() % SHORTDELAY)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
-
+		// sometimes drop the request
 		if reliable == false && (rand.Int()%1000) < 100 {
 			// drop the request, return as if timeout
 			req.replyCh <- replyMsg{false, nil}
 			return
 		}
 
-		// execute the request (call the RPC handler).
-		// in a separate thread so that we can periodically check
-		// if the server has been killed and the RPC should get a
-		// failure reply.
+		// execute the request (call the RPC handler). in a separate thread so that we can periodically check
+		// if the server has been killed and the RPC should get a failure reply.
 		ech := make(chan replyMsg)
 		go func() {
 			r := server.dispatch(req)
@@ -271,6 +278,7 @@ func (rn *Network) processReq(req reqMsg) {
 			select {
 			case reply = <-ech:
 				replyOK = true
+			// check periodically if server is dead
 			case <-time.After(100 * time.Millisecond):
 				serverDead = rn.isServerDead(req.endname, servername, server)
 				if serverDead {
@@ -280,22 +288,20 @@ func (rn *Network) processReq(req reqMsg) {
 				}
 			}
 		}
-
 		// do not reply if DeleteServer() has been called, i.e.
-		// the server has been killed. this is needed to avoid
-		// situation in which a client gets a positive reply
-		// to an Append, but the server persisted the update
-		// into the old Persister. config.go is careful to call
-		// DeleteServer() before superseding the Persister.
+		// the server has been killed. this is needed to avoid situation in which a client gets a positive reply
+		// to an Append, but the server persisted the update into the old Persister. config.go is careful to call
+		// DeleteServer() before superseding the Persister. 如果服务器在应答之后被删除，则不回复
+		// 这样做是为了避免客户端收到一个成功的应答，但服务器实际上已经被删除并且数据被写入了旧的持久化存储中
 		serverDead = rn.isServerDead(req.endname, servername, server)
 
-		if replyOK == false || serverDead == true {
+		if !replyOK || serverDead {
 			// server was killed while we were waiting; return error.
 			req.replyCh <- replyMsg{false, nil}
-		} else if reliable == false && (rand.Int()%1000) < 100 {
+		} else if !reliable && (rand.Int()%1000) < 100 {
 			// drop the reply, return as if timeout
 			req.replyCh <- replyMsg{false, nil}
-		} else if longreordering == true && rand.Intn(900) < 600 {
+		} else if longreordering && rand.Intn(900) < 600 {
 			// delay the response for a while
 			ms := 200 + rand.Intn(1+rand.Intn(2000))
 			// Russ points out that this timer arrangement will decrease
@@ -313,12 +319,10 @@ func (rn *Network) processReq(req reqMsg) {
 		// simulate no reply and eventual timeout.
 		ms := 0
 		if rn.IsLongDelays() {
-			// let Raft tests check that leader doesn't send
-			// RPCs synchronously.
+			// let Raft tests check that leader doesn't send RPCs synchronously.
 			ms = (rand.Int() % LONGDELAY)
 		} else {
-			// many kv tests require the client to try each
-			// server in fairly rapid succession.
+			// many kv tests require the client to try each server in fairly rapid succession.
 			ms = (rand.Int() % 100)
 		}
 		time.AfterFunc(time.Duration(ms)*time.Millisecond, func() {
@@ -328,7 +332,7 @@ func (rn *Network) processReq(req reqMsg) {
 
 }
 
-// create a client end-point.
+// MakeEnd creates a client end-point.
 // start the thread that listens and delivers.
 func (rn *Network) MakeEnd(endname interface{}) *ClientEnd {
 	rn.mu.Lock()
@@ -375,8 +379,8 @@ func (rn *Network) DeleteServer(servername interface{}) {
 	rn.servers[servername] = nil
 }
 
-// connect a ClientEnd to a server.
-// a ClientEnd can only be connected once in its lifetime.
+// Connect attaches a ClientEnd to a server.
+// A ClientEnd can only be connected once in its lifetime.
 func (rn *Network) Connect(endname interface{}, servername interface{}) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -384,7 +388,7 @@ func (rn *Network) Connect(endname interface{}, servername interface{}) {
 	rn.connections[endname] = servername
 }
 
-// enable/disable a ClientEnd.
+// Enable sets the enabled state of a ClientEnd.
 func (rn *Network) Enable(endname interface{}, enabled bool) {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -392,7 +396,7 @@ func (rn *Network) Enable(endname interface{}, enabled bool) {
 	rn.enabled[endname] = enabled
 }
 
-// get a server's count of incoming RPCs.
+// get a Server's count of incoming RPCs.
 func (rn *Network) GetCount(servername interface{}) int {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -411,7 +415,7 @@ func (rn *Network) GetTotalBytes() int64 {
 	return x
 }
 
-// a server is a collection of services, all sharing
+// A Server is a collection of services, all sharing
 // the same rpc dispatcher. so that e.g. both a Raft
 // and a k/v server can listen to the same rpc endpoint.
 type Server struct {
@@ -441,7 +445,7 @@ func (rs *Server) dispatch(req reqMsg) replyMsg {
 	dot := strings.LastIndex(req.svcMeth, ".")
 	serviceName := req.svcMeth[:dot]
 	methodName := req.svcMeth[dot+1:]
-
+	// check that the service is known
 	service, ok := rs.services[serviceName]
 
 	rs.mu.Unlock()
@@ -482,13 +486,13 @@ func MakeService(rcvr interface{}) *Service {
 	svc.methods = map[string]reflect.Method{}
 
 	for m := 0; m < svc.typ.NumMethod(); m++ {
-		method := svc.typ.Method(m)
-		mtype := method.Type
-		mname := method.Name
+		method := svc.typ.Method(m) // 获取方法
+		mtype := method.Type        // 获取方法类型
+		mname := method.Name        // 获取方法名
 
 		//fmt.Printf("%v pp %v ni %v 1k %v 2k %v no %v\n",
 		//	mname, method.PkgPath, mtype.NumIn(), mtype.In(1).Kind(), mtype.In(2).Kind(), mtype.NumOut())
-
+		// select only suitable methods
 		if method.PkgPath != "" || // capitalized?
 			mtype.NumIn() != 3 ||
 			//mtype.In(1).Kind() != reflect.Ptr ||
@@ -501,10 +505,10 @@ func MakeService(rcvr interface{}) *Service {
 			svc.methods[mname] = method
 		}
 	}
-
 	return svc
 }
 
+// dispatch the RPC to the appropriate method.
 func (svc *Service) dispatch(methname string, req reqMsg) replyMsg {
 	if method, ok := svc.methods[methname]; ok {
 		// prepare space into which to read the argument.
