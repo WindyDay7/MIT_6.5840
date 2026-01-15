@@ -77,6 +77,7 @@ type reqMsg struct {
 	replyCh  chan replyMsg
 }
 
+// reply message
 type replyMsg struct {
 	ok    bool
 	reply []byte
@@ -110,6 +111,8 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 
 	//
 	// send the request.
+	// the Network will arrange for it to be delivered to the server.
+	// the Network use a goroutine to listen on e.ch.
 	//
 	select {
 	case e.ch <- req:
@@ -344,8 +347,8 @@ func (rn *Network) MakeEnd(endname interface{}) *ClientEnd {
 
 	e := &ClientEnd{}
 	e.endname = endname
-	e.ch = rn.endCh
-	e.done = rn.done
+	e.ch = rn.endCh  // the Network use a goroutine to listen on e.ch.
+	e.done = rn.done // closed when Network is cleaned up
 	rn.ends[endname] = e
 	rn.enabled[endname] = false
 	rn.connections[endname] = nil
