@@ -2,14 +2,15 @@ package lock
 
 import (
 	"fmt"
+
 	//	"log"
 	"strconv"
 	"testing"
 	"time"
 
-	"6.5840/kvsrv1"
+	kvsrv "6.5840/kvsrv1"
 	"6.5840/kvsrv1/rpc"
-	"6.5840/kvtest1"
+	kvtest "6.5840/kvtest1"
 )
 
 const (
@@ -19,6 +20,8 @@ const (
 )
 
 func oneClient(t *testing.T, me int, ck kvtest.IKVClerk, done chan struct{}) kvtest.ClntRes {
+	// make a lock client and use it to acquire and release the lock NACQUIRE times.
+	// The test passes if no two clients are never holding the lock at the same time.
 	lk := MakeLock(ck, "l")
 	ck.Put("l0", "", 0)
 	for i := 1; true; i++ {
@@ -66,7 +69,8 @@ func runClients(t *testing.T, nclnt int, reliable bool) {
 	defer ts.Cleanup()
 
 	ts.Begin(fmt.Sprintf("Test: %d lock clients", nclnt))
-
+	// Spawn nclnt clients, each of which tries to acquire and release the lock NACQUIRE times.
+	// The test passes if no two clients are never holding the lock at the same time.
 	ts.SpawnClientsAndWait(nclnt, NSEC*time.Second, func(me int, myck kvtest.IKVClerk, done chan struct{}) kvtest.ClntRes {
 		return oneClient(t, me, myck, done)
 	})
