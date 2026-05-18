@@ -4,8 +4,8 @@ import (
 	// "log"
 	"testing"
 
-	"6.5840/kvtest1"
-	"6.5840/tester1"
+	kvtest "6.5840/kvtest1"
+	tester "6.5840/tester1"
 )
 
 type TestKV struct {
@@ -15,6 +15,8 @@ type TestKV struct {
 }
 
 func MakeTestKV(t *testing.T, reliable bool) *TestKV {
+	// make a config with 1 server and 1 client, and use it to make a TestKV
+	// The test will use the TestKV's MakeClerk() method to make a client, and the client will talk to the server in the config.
 	cfg := tester.MakeConfig(t, 1, reliable, StartKVServer)
 	ts := &TestKV{
 		t:        t,

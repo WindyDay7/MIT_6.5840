@@ -4,10 +4,12 @@ import (
 	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
+
 	//"log"
 	"math/big"
 	"math/rand"
 	"runtime"
+
 	// "runtime/debug"
 	"strings"
 	"sync"
@@ -44,8 +46,10 @@ func MakeConfig(t *testing.T, n int, reliable bool, mks FstartServer) *Config {
 	runtime.GOMAXPROCS(4)
 	cfg := &Config{}
 	cfg.t = t
+	// make a network and groups, and make the servers and clients that talk to those servers.
 	cfg.net = labrpc.MakeNetwork()
 	cfg.Groups = newGroups(cfg.net)
+	// make a group with n servers, and make the clients that talk to those servers.
 	cfg.MakeGroupStart(GRP0, n, mks)
 	cfg.Clnts = makeClnts(cfg.net)
 	cfg.start = time.Now()

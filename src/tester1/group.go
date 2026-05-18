@@ -40,7 +40,8 @@ func newGroups(net *labrpc.Network) *Groups {
 func (gs *Groups) MakeGroup(gid Tgid, nsrv int, mks FstartServer) {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
-
+	// make a group with gid, and make the servers in the group.
+	// The servers will be connected to each other, but not to any other servers in any other group.
 	gs.grps[gid] = makeSrvGrp(gs.net, gid, nsrv, mks)
 }
 
@@ -235,7 +236,8 @@ func (sg *ServerGrp) SnapshotSize() int {
 func (sg *ServerGrp) StartServer(i int) {
 	srv := sg.srvs[i].startServer(sg.gid)
 	sg.srvs[i] = srv
-
+	// mks is the FstartServer passed to MakeGroup
+	// which is used to make the services for the server.
 	srv.svcs = sg.mks(srv.clntEnds, sg.gid, i, srv.saved)
 	labsrv := labrpc.MakeServer()
 	for _, svc := range srv.svcs {
