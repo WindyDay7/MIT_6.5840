@@ -25,7 +25,7 @@ func main() {
 	// create a Coordinator, os.Args[1:] are the file_names[] arrary, 10 is the number
 	// of reduce tasks
 	m := mr.MakeCoordinator(os.Args[1:], 10)
-	// check if the Coordinator done
+	// check if the Coordinator done every second, if done, break the loop and exit
 	for m.Done() == false {
 		time.Sleep(time.Second)
 	}

@@ -212,6 +212,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.reduceDone = false
 	c.cond = sync.NewCond(&c.Mutex)
 	c.nReduce = nReduce
+	// Start the RPC server+
 	c.server()
 	return &c
 }
