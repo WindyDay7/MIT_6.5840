@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"6.5840/tester1"
+	tester "6.5840/tester1"
 )
 
 // The tester generously allows solutions to complete elections in one second
@@ -767,6 +767,7 @@ func TestPersist13C(t *testing.T) {
 
 	tester.AnnotateTest("TestPersist13C", servers)
 	ts.Begin("Test (3C): basic persistence")
+	// fmt.Printf("committed index 11 on all servers\n")
 
 	ts.one(11, servers, true)
 
